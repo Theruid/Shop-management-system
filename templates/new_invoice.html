@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3>New {{ invoice_type|title }} Invoice</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Item Selection -->
+                    <div class="mb-4">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <select class="form-select" id="item-select">
+                                    <option value="">Select an item...</option>
+                                    {% for item in items %}
+                                    <option value="{{ item.id }}" 
+                                            data-price="{{ item.price }}"
+                                            data-stock="{{ item.quantity }}">
+                                        {{ item.name }} - ${{ "%.2f"|format(item.price) }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <input type="number" class="form-control" id="quantity-input" placeholder="Quantity">
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" id="add-item-btn">
+                                    <i class="fas fa-plus me-2"></i>Add
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items Table -->
+                    <div class="table-responsive mb-3">
+                        <table class="table" id="items-table">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Quantity</th>
+                                    <th>Price</th>
+                                    <th>Total</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" class="text-end"><strong>Subtotal:</strong></td>
+                                    <td><span id="subtotal">$0.00</span></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3" class="text-end">
+                                        <div class="input-group" style="max-width: 200px; margin-left: auto;">
+                                            <span class="input-group-text">Discount</span>
+                                            <input type="number" class="form-control" id="discount-percentage" min="0" max="100" value="0" step="0.1">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </td>
+                                    <td><span id="discount-amount">-$0.00</span></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3" class="text-end"><strong>Total:</strong></td>
+                                    <td><strong><span id="total">$0.00</span></strong></td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Invoice Summary -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Invoice Summary</h4>
+                </div>
+                <div class="card-body">
+                    <form id="invoice-form">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Customer *</label>
+                                            <select class="form-select" id="customer" required>
+                                                <option value="">Select Customer</option>
+                                                {% for customer in customers %}
+                                                <option value="{{ customer.id }}">{{ customer.code }} - {{ customer.full_name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    {% if settings.allow_date_edit %}
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Invoice Date</label>
+                                            <input type="datetime-local" class="form-control" id="invoice_date" value="{{ current_date }}">
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Number of Items</label>
+                            <input type="text" class="form-control" id="items-count" value="0" readonly>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Total Amount</label>
+                            <input type="text" class="form-control" id="final-amount" value="$0.00" readonly>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-success" onclick="submitInvoice()">
+                                <i class="fas fa-save me-2"></i>Save Invoice
+                            </button>
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                                <i class="fas fa-times me-2"></i>Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function updateTotals() {
+        let total = 0;
+        let itemCount = 0;
+        
+        document.querySelectorAll('#items-table tbody tr').forEach(row => {
+            const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
+            const price = parseFloat(row.querySelector('.price').value) || 0;
+            const rowTotal = quantity * price;
+            row.querySelector('.total').textContent = rowTotal.toFixed(2);
+            total += rowTotal;
+            itemCount += quantity;
+        });
+        
+        const discountPercentage = parseFloat(document.getElementById('discount-percentage').value) || 0;
+        const discountAmount = total * (discountPercentage / 100);
+        const finalTotal = total - discountAmount;
+        
+        document.getElementById('subtotal').textContent = total.toFixed(2);
+        document.getElementById('discount-amount').textContent = discountAmount.toFixed(2);
+        document.getElementById('total').textContent = finalTotal.toFixed(2);
+        document.getElementById('items-count').value = itemCount;
+        document.getElementById('final-amount').value = finalTotal.toFixed(2);
+    }
+
+    function addItem() {
+        const select = document.getElementById('item-select');
+        const quantityInput = document.getElementById('quantity-input');
+        const option = select.options[select.selectedIndex];
+        const itemId = option.value;
+        const itemName = option.text;
+        const price = parseFloat(option.getAttribute('data-price'));
+        const quantity = parseFloat(quantityInput.value) || 1;  // Get quantity from input, default to 1
+        
+        if (!itemId) {
+            alert('Please select an item');
+            return;
+        }
+        
+        // Check if item already exists
+        const existingRow = document.querySelector(`tr[data-item-id="${itemId}"]`);
+        if (existingRow) {
+            const rowQuantityInput = existingRow.querySelector('.quantity');
+            const newQuantity = parseFloat(rowQuantityInput.value) + quantity;  // Add new quantity to existing
+            rowQuantityInput.value = newQuantity;
+            rowQuantityInput.dispatchEvent(new Event('change'));
+            // Clear inputs after adding
+            select.value = '';
+            quantityInput.value = '';
+            return;
+        }
+        
+        const tbody = document.querySelector('#items-table tbody');
+        const row = document.createElement('tr');
+        row.setAttribute('data-item-id', itemId);
+        
+        row.innerHTML = `
+            <td>${itemName}</td>
+            <td><input type="number" class="form-control quantity" value="${quantity}" min="1" step="1"></td>
+            <td><input type="number" class="form-control price" value="${price}" step="0.01"></td>
+            <td>$<span class="total">${(price * quantity).toFixed(2)}</span></td>
+            <td><button type="button" class="btn btn-danger btn-sm" onclick="removeItem(this)">Remove</button></td>
+        `;
+        
+        tbody.appendChild(row);
+        
+        // Add event listeners for quantity and price changes
+        const rowQuantityInput = row.querySelector('.quantity');
+        const priceInput = row.querySelector('.price');
+        
+        rowQuantityInput.addEventListener('change', updateTotals);
+        priceInput.addEventListener('change', updateTotals);
+        
+        // Clear inputs after adding
+        select.value = '';
+        quantityInput.value = '';
+        
+        updateTotals();
+    }
+
+    function removeItem(button) {
+        button.closest('tr').remove();
+        updateTotals();
+    }
+
+    // Add event listener for discount changes
+    document.getElementById('discount-percentage').addEventListener('change', updateTotals);
+
+    function submitInvoice() {
+        const items = [];
+        document.querySelectorAll('#items-table tbody tr').forEach(row => {
+            const itemId = row.getAttribute('data-item-id');
+            const quantity = parseFloat(row.querySelector('.quantity').value);
+            const price = parseFloat(row.querySelector('.price').value);
+            items.push({
+                item_id: parseInt(itemId),
+                quantity: quantity,
+                price: price
+            });
+        });
+
+        const data = {
+            items: items,
+            customer_id: document.getElementById('customer').value,
+            subtotal: parseFloat(document.getElementById('subtotal').textContent),
+            discount_percentage: parseFloat(document.getElementById('discount-percentage').value || 0),
+            discount_amount: parseFloat(document.getElementById('discount-amount').textContent),
+            total_amount: parseFloat(document.getElementById('total').textContent)
+        };
+
+        {% if settings.allow_date_edit %}
+        data.invoice_date = document.getElementById('invoice_date').value;
+        {% endif %}
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = data.redirect;  
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while saving the invoice');
+        });
+    }
+
+    // Add event listener for add item button
+    document.getElementById('add-item-btn').addEventListener('click', addItem);
+
+    // Load items when page loads
+    fetch('/items/json')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('item-select');
+            select.innerHTML = '<option value="">Select an item...</option>';
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.dataset.price = item.price;
+                option.dataset.stock = item.quantity;
+                option.textContent = `${item.name} - ${item.price.toFixed(2)}`;
+                select.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading items:', error);
+            alert('Error loading items. Please refresh the page.');
+        });
+</script>
+{% endblock %}
